@@ -449,12 +449,57 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
     Scanr f z a         -> embed  (into2 Scanr         (cvtF f) (cvtE z)) a
     Scanr1 f a          -> embed  (into  Scanr1        (cvtF f)) a
     Scanr' f z a        -> embed  (into2 Scanr'        (cvtF f) (cvtE z)) a
-    Permute f d p a     -> trace "embedPreAcc:Permute"
-                         $ embed2' (into2 permute       (cvtF f) (cvtF p)) d a
+    Permute f d p a     -> trav2' (into2' permute       (cvtF f) (cvtF p)) d a
     Stencil f x a       -> embed  (into2 stencil1      (cvtF f) (cvtB x)) a
     Stencil2 f x a y b  -> embed2 (into3 stencil2      (cvtF f) (cvtB x) (cvtB y)) a b
 
   where
+    into2' :: (Sink f1, Sink f2)
+          => (f1 env' a -> f2 env' b -> c) -> f1 env a -> f2 env b -> Extend acc env env' -> c
+    into2' op a b env = op (sink env a) (sink env b)
+
+    trav2' :: forall aenv as bs cs. (Arrays as, Arrays bs, Arrays cs)
+          => (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> acc aenv' bs -> PreOpenAcc acc aenv' cs)
+          ->       acc aenv as
+          ->       acc aenv bs
+          -> Embed acc aenv cs
+    trav2' op (embedAcc -> Embed env1 cc1) (embedAcc . sink env1 -> Embed env0 cc0)
+      -- merge envs, so that things that depend on either env1 or
+      -- env0 can be "satisfied" with the merged env
+      | env     <- env1 `append` env0
+      -- Let bind cc1? This does the sink and it gets let bound
+      -- but i'm not sure
+      , acc1    <- inject . compute' $ sink env0 cc1
+      -- do something other than let-binding? IDK what is
+      -- happening here, but this doesn't sink but just computes
+      -- as is, and this one is inlined and acc1 is let bound
+      , acc0    <- inject . compute' $ cc0
+      = trace ("trav2'")
+      -- build the stuff, I *think* I know what is going on, but
+      -- don't know exactly.
+      $ Embed (env `PushEnv` inject (op env acc1 acc0)) (Done ZeroIdx)
+
+    {-
+    Problems:
+      - The types are confusing, I have no idea how to handle the stuff.
+        I tried to integrate into2' into trav2' where I didn't change
+        any logic but already failed.
+      - I'm only somewhat sure about what I think the different functions
+        do. I cannot infer as there is almost no documentation.
+        Part of the implementation is hidden behind typeclasses, but
+        as I have no idea what the actual concrete types are in this
+        case I cannot find them. But even the non-typeclass I don't
+        understand.
+      - Overall: bad entrypoint for messing with this stuff. With the
+        almost non-existence of documentation, I'm dependent on the
+        "self-documenting" nature of the haskell code. However, this
+        only applies if you actually can infer information from types
+        and stuff. I don't. If I am to familiarize myself with all this
+        (which I think is way too complex for the limited time left)
+        I hope there is some less-complex entrypoint somewhere where
+        I can start to familiarize, and then return to this stuff later.
+    -}
+
     -- If fusion is not enabled, force terms to the manifest representation
     --
     unembed :: Embed acc aenv arrs -> Embed acc aenv arrs
@@ -516,7 +561,6 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
 
     into2 :: (Sink f1, Sink f2)
           => (f1 env' a -> f2 env' b -> c) -> f1 env a -> f2 env b -> Extend acc env env' -> c
-    -- into2 op a b env = op (sink env a) (sink env b)
     into2 op a b env = op (sink env a) (sink env b)
 
     into3 :: (Sink f1, Sink f2, Sink f3)
@@ -553,14 +597,6 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
            -> Embed acc aenv cs
     embed2 = trav2 id id
 
-    embed2' :: forall aenv as bs cs. (Arrays as, Arrays bs, Arrays cs)
-           => (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> acc aenv' bs -> PreOpenAcc acc aenv' cs)
-           ->       acc aenv as
-           ->       acc aenv bs
-           -> Embed acc aenv cs
-    -- embed2' = trace "embed2" $ trav2 id id
-    embed2' a b c = trace ("embed2'" ) $ trav2' id id a b c
-
     trav1 :: (Arrays as, Arrays bs)
           => (forall aenv'. Embed acc aenv' as -> Embed acc aenv' as)
           -> (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> PreOpenAcc acc aenv' bs)
@@ -582,19 +618,13 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
       , acc0    <- inject . compute' $ cc0
       = Embed (env `PushEnv` inject (op env acc1 acc0)) (Done ZeroIdx)
 
-    trav2' :: forall aenv as bs cs. (Arrays as, Arrays bs, Arrays cs)
-          => (forall aenv'. Embed acc aenv' as -> Embed acc aenv' as)
-          -> (forall aenv'. Embed acc aenv' bs -> Embed acc aenv' bs)
-          -> (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> acc aenv' bs -> PreOpenAcc acc aenv' cs)
-          ->       acc aenv as
-          ->       acc aenv bs
-          -> Embed acc aenv cs
-    trav2' f1 f0 op (f1 . embedAcc -> Embed env1 cc1) (f0 . embedAcc . sink env1 -> Embed env0 cc0)
-      | env     <- env1 `append` env0
-      , acc1    <- inject . compute' $ sink env0 cc1
-      , acc0    <- inject . compute' $ cc0
-      = trace ("trav2'" ++ show cc1)
-      $ Embed (env `PushEnv` inject (op env acc1 acc0)) (Done ZeroIdx)
+
+
+      -- op -> permute f p d a = Permute f d p a
+      -- env  = combination fun
+      -- acc1 = permute fun
+
+
 
     -- force :: Arrays as => Embed acc aenv' as -> Embed acc aenv' as
     -- force (Embed env cc)

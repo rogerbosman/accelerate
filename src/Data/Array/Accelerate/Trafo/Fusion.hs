@@ -449,7 +449,8 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
     Scanr f z a         -> embed  (into2 Scanr         (cvtF f) (cvtE z)) a
     Scanr1 f a          -> embed  (into  Scanr1        (cvtF f)) a
     Scanr' f z a        -> embed  (into2 Scanr'        (cvtF f) (cvtE z)) a
-    Permute f d p a     -> trace "hoi" $ embed2 (into2 permute       (cvtF f) (cvtF p)) d a
+    Permute f d p a     -> trace "embedPreAcc:Permute"
+                         $ embed2' (into2 permute       (cvtF f) (cvtF p)) d a
     Stencil f x a       -> embed  (into2 stencil1      (cvtF f) (cvtB x)) a
     Stencil2 f x a y b  -> embed2 (into3 stencil2      (cvtF f) (cvtB x) (cvtB y)) a b
 
@@ -508,10 +509,14 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
     into :: Sink f => (f env' a -> b) -> f env a -> Extend acc env env' -> b
     into op a env = op (sink env a)
 
-    -- Permute f d p a     -> embed2 (into2 permute       (cvtF f) (cvtF p)) d a
+    -- Permute f d p a     -> embed2 (into2 permute (cvtF f) (cvtF p) ) d a
+    -- op = permute
+    -- a  = (cvtF f)
+    -- b  = (cvtF p)
 
     into2 :: (Sink f1, Sink f2)
           => (f1 env' a -> f2 env' b -> c) -> f1 env a -> f2 env b -> Extend acc env env' -> c
+    -- into2 op a b env = op (sink env a) (sink env b)
     into2 op a b env = op (sink env a) (sink env b)
 
     into3 :: (Sink f1, Sink f2, Sink f3)
@@ -548,6 +553,14 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
            -> Embed acc aenv cs
     embed2 = trav2 id id
 
+    embed2' :: forall aenv as bs cs. (Arrays as, Arrays bs, Arrays cs)
+           => (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> acc aenv' bs -> PreOpenAcc acc aenv' cs)
+           ->       acc aenv as
+           ->       acc aenv bs
+           -> Embed acc aenv cs
+    -- embed2' = trace "embed2" $ trav2 id id
+    embed2' a b c = trace ("embed2'" ) $ trav2' id id a b c
+
     trav1 :: (Arrays as, Arrays bs)
           => (forall aenv'. Embed acc aenv' as -> Embed acc aenv' as)
           -> (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> PreOpenAcc acc aenv' bs)
@@ -568,6 +581,20 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
       , acc1    <- inject . compute' $ sink env0 cc1
       , acc0    <- inject . compute' $ cc0
       = Embed (env `PushEnv` inject (op env acc1 acc0)) (Done ZeroIdx)
+
+    trav2' :: forall aenv as bs cs. (Arrays as, Arrays bs, Arrays cs)
+          => (forall aenv'. Embed acc aenv' as -> Embed acc aenv' as)
+          -> (forall aenv'. Embed acc aenv' bs -> Embed acc aenv' bs)
+          -> (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> acc aenv' bs -> PreOpenAcc acc aenv' cs)
+          ->       acc aenv as
+          ->       acc aenv bs
+          -> Embed acc aenv cs
+    trav2' f1 f0 op (f1 . embedAcc -> Embed env1 cc1) (f0 . embedAcc . sink env1 -> Embed env0 cc0)
+      | env     <- env1 `append` env0
+      , acc1    <- inject . compute' $ sink env0 cc1
+      , acc0    <- inject . compute' $ cc0
+      = trace ("trav2'" ++ show cc1)
+      $ Embed (env `PushEnv` inject (op env acc1 acc0)) (Done ZeroIdx)
 
     -- force :: Arrays as => Embed acc aenv' as -> Embed acc aenv' as
     -- force (Embed env cc)

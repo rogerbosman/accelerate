@@ -449,35 +449,49 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
     Scanr f z a         -> embed  (into2 Scanr         (cvtF f) (cvtE z)) a
     Scanr1 f a          -> embed  (into  Scanr1        (cvtF f)) a
     Scanr' f z a        -> embed  (into2 Scanr'        (cvtF f) (cvtE z)) a
-    Permute f d p a     -> trav2' (into2' permute       (cvtF f) (cvtF p)) d a
     Stencil f x a       -> embed  (into2 stencil1      (cvtF f) (cvtB x)) a
     Stencil2 f x a y b  -> embed2 (into3 stencil2      (cvtF f) (cvtB x) (cvtB y)) a b
+
+
+    Permute f d p a     -> trav2' (into2' permute       (cvtF f) (cvtF p)) d a
 
   where
     into2' :: (Sink f1, Sink f2)
           => (f1 env' a -> f2 env' b -> c) -> f1 env a -> f2 env b -> Extend acc env env' -> c
     into2' op a b env = op (sink env a) (sink env b)
 
-    trav2' :: forall aenv as bs cs. (Arrays as, Arrays bs, Arrays cs)
-          => (forall aenv'. Extend acc aenv aenv' -> acc aenv' as -> acc aenv' bs -> PreOpenAcc acc aenv' cs)
-          ->       acc aenv as
-          ->       acc aenv bs
+    {-
+    f1 = id
+    f0 = id
+    op = the partially applied into2 that sinks and applies permute given an env
+
+    Embed env1 cc1 = (f1 . embedAcc) d             (our default values)
+    Embed env0 cc0 = (f0 . embedAcc . sink env1) a (our source array)
+    -}
+    trav2' :: forall aenv aenv' cs sh sh' e. (Arrays cs, Shape sh, Shape sh', Elt e)
+          => (forall aenv'. Extend acc aenv aenv'
+                        -> acc aenv' (Array sh' e)
+                        -> acc aenv' (Array sh e)
+                        -> PreOpenAcc acc aenv' cs
+             )
+          ->       acc aenv (Array sh' e)
+          ->       acc aenv (Array sh  e)
           -> Embed acc aenv cs
-    trav2' op (embedAcc -> Embed env1 cc1) (embedAcc . sink env1 -> Embed env0 cc0)
-      -- merge envs, so that things that depend on either env1 or
-      -- env0 can be "satisfied" with the merged env
-      | env     <- env1 `append` env0
-      -- Let bind cc1? This does the sink and it gets let bound
-      -- but i'm not sure
-      , acc1    <- inject . compute' $ sink env0 cc1
-      -- do something other than let-binding? IDK what is
-      -- happening here, but this doesn't sink but just computes
-      -- as is, and this one is inlined and acc1 is let bound
-      , acc0    <- inject . compute' $ cc0
-      = trace ("trav2'")
-      -- build the stuff, I *think* I know what is going on, but
-      -- don't know exactly.
-      $ Embed (env `PushEnv` inject (op env acc1 acc0)) (Done ZeroIdx)
+    trav2' op (embedAcc ->             (Embed env1 cc1 :: Embed acc aenv (Array sh' e)))
+              (embedAcc . sink env1 ->  Embed env0 cc0) -- :: Embed acc aenv' (Array sh e)
+      | env1'   <- env1 -- :: Extend acc aenv aenv'
+      , env0'   <- env0 -- :: Extend acc aenv' aenv''
+      , env     <- env1 `append` env0 -- :: Extend acc env env''
+      , cacc1nonsink <- compute' $ cc1
+      , cacc1   <- compute' $ sink env0 cc1
+      , acc1'   <- inject cacc1
+      -- , acc1    <- inject . compute' $ sink env0 cc1
+      , cacc0   <- compute' $ cc0
+      , acc0'   <- inject cacc0
+      -- , acc0    <- inject . compute' $ cc0
+      = case cacc1nonsink of
+          Avar v -> trace "avarv" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
+          _      -> trace "other" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
 
     {-
     Problems:

@@ -478,11 +478,12 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
           ->       acc aenv (Array sh  e)
           -> Embed acc aenv cs
     trav2' op (embedAcc ->             (Embed env1 cc1 :: Embed acc aenv (Array sh' e)))
-              (embedAcc . sink env1 ->  Embed env0 cc0) -- :: Embed acc aenv' (Array sh e)
+              (embedAcc . sink env1 ->  Embed env0 cc0) -- :: Embed acc aenv' (Array sh e)definitions
       | env1'   <- env1 -- :: Extend acc aenv aenv'
       , env0'   <- env0 -- :: Extend acc aenv' aenv''
       , env     <- env1 `append` env0 -- :: Extend acc env env''
-      , cacc1nonsink <- compute' $ cc1
+      -- TODO: why can we call compte? We only know cc1 to be of
+      , cacc1nonsink <- trace (printType cc1) $ compute' $ cc1
       , cacc1   <- compute' $ sink env0 cc1
       , acc1'   <- inject cacc1
       -- , acc1    <- inject . compute' $ sink env0 cc1
@@ -492,6 +493,10 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
       = case cacc1nonsink of
           Avar v -> trace "avarv" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
           _      -> trace "other" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
+        where
+          printType (Done _)       = "Done"
+          printType (Yield _ _ )   = "Yield"
+          printType (Step _ _ _ _) = "Step"
 
     {-
     Problems:

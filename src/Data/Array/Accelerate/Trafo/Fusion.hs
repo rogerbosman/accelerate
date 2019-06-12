@@ -482,7 +482,6 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
       | env1'   <- env1 -- :: Extend acc aenv aenv'
       , env0'   <- env0 -- :: Extend acc aenv' aenv''
       , env     <- env1 `append` env0 -- :: Extend acc env env''
-      -- TODO: why can we call compte? We only know cc1 to be of
       , cacc1nonsink <- trace (printType cc1) $ compute' $ cc1
       , cacc1   <- compute' $ sink env0 cc1
       , acc1'   <- inject cacc1
@@ -491,12 +490,28 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
       , acc0'   <- inject cacc0
       -- , acc0    <- inject . compute' $ cc0
       = case cacc1nonsink of
-          Avar v -> trace "avarv" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
+          Avar v -> trace "avarv" $ Embed (env `PushEnv` ) (inject (op env acc1' acc0'))
           _      -> trace "other" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
         where
           printType (Done _)       = "Done"
           printType (Yield _ _ )   = "Yield"
           printType (Step _ _ _ _) = "Step"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     {-
     Problems:

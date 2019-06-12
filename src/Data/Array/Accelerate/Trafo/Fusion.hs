@@ -453,7 +453,7 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
     Stencil2 f x a y b  -> embed2 (into3 stencil2      (cvtF f) (cvtB x) (cvtB y)) a b
 
 
-    Permute f d p a     -> trav2' (into2' permute       (cvtF f) (cvtF p)) d a
+    Permute f d p a     -> trav2'' (into2' permute       (cvtF f) (cvtF p)) d a
 
   where
     into2' :: (Sink f1, Sink f2)
@@ -490,13 +490,24 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
       , acc0'   <- inject cacc0
       -- , acc0    <- inject . compute' $ cc0
       = case cacc1nonsink of
-          Avar v -> trace "avarv" $ Embed (env `PushEnv` ) (inject (op env acc1' acc0'))
+          Avar v -> trace "avarv" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
           _      -> trace "other" $ Embed (env `PushEnv` inject (op env acc1' acc0')) (Done ZeroIdx)
         where
           printType (Done _)       = "Done"
           printType (Yield _ _ )   = "Yield"
           printType (Step _ _ _ _) = "Step"
 
+    trav2'' :: forall aenv aenv' cs sh sh' e. (Arrays cs, Shape sh, Shape sh', Elt e)
+          => (forall aenv'. Extend acc aenv aenv'
+                        -> acc aenv' (Array sh' e)
+                        -> acc aenv' (Array sh e)
+                        -> PreOpenAcc acc aenv' cs
+             )
+          ->       acc aenv (Array sh' e)
+          ->       acc aenv (Array sh  e)
+          -> Embed acc aenv cs
+    trav2'' op defaults source
+      = Embed (BaseEnv `PushEnv` (inject (op BaseEnv defaults source))) (Done ZeroIdx)
 
 
 

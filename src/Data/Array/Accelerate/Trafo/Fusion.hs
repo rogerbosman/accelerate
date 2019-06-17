@@ -1,17 +1,17 @@
-{-# LANGUAGE CPP                  #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE InstanceSigs         #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PatternGuards        #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE ViewPatterns         #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE InstanceSigs        #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PatternGuards       #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing      #-}
 -- |
@@ -45,25 +45,29 @@ module Data.Array.Accelerate.Trafo.Fusion (
 ) where
 
 -- standard library
-import Prelude                                          hiding ( exp, until )
+import           Prelude                                    hiding (exp, until)
 
 -- friends
-import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Trafo.Base
-import Data.Array.Accelerate.Trafo.Shrink
-import Data.Array.Accelerate.Trafo.Simplify
-import Data.Array.Accelerate.Trafo.Substitution
-import Data.Array.Accelerate.Array.Representation       ( SliceIndex(..) )
-import Data.Array.Accelerate.Array.Sugar                ( Array, Arrays(..), ArraysR(..), ArrRepr
-                                                        , Elt, EltRepr, Shape, Tuple(..), Atuple(..)
-                                                        , IsAtuple, TupleRepr, eltType )
-import Data.Array.Accelerate.Product
-import Data.Array.Accelerate.Type
+import           Data.Array.Accelerate.Array.Representation (SliceIndex (..))
+import           Data.Array.Accelerate.Array.Sugar          (ArrRepr, Array,
+                                                             Arrays (..),
+                                                             ArraysR (..),
+                                                             Atuple (..), Elt,
+                                                             EltRepr, IsAtuple,
+                                                             Shape, Tuple (..),
+                                                             TupleRepr, eltType)
+import           Data.Array.Accelerate.AST
+import           Data.Array.Accelerate.Error
+import           Data.Array.Accelerate.Product
+import           Data.Array.Accelerate.Trafo.Base
+import           Data.Array.Accelerate.Trafo.Shrink
+import           Data.Array.Accelerate.Trafo.Simplify
+import           Data.Array.Accelerate.Trafo.Substitution
+import           Data.Array.Accelerate.Type
 
-import qualified Data.Array.Accelerate.Debug.Stats      as Stats
+import qualified Data.Array.Accelerate.Debug.Stats          as Stats
 #ifdef ACCELERATE_DEBUG
-import System.IO.Unsafe -- for debugging
+import           System.IO.Unsafe
 #endif
 
 
@@ -122,6 +126,7 @@ convertOpenAcc fuseAcc = manifest fuseAcc . computeAcc . embedOpenAcc fuseAcc
 --
 delayed :: (Shape sh, Elt e) => Bool -> OpenAcc aenv (Array sh e) -> DelayedOpenAcc aenv (Array sh e)
 delayed fuseAcc (embedOpenAcc fuseAcc -> Embed BaseEnv cc) =
+-- delayed fuseAcc (embedOpenAcc fuseAcc -> Embed env cc) =
   case cc of
     Done v                                -> Delayed (arrayShape v) (indexArray v) (linearIndex v)
     Yield (cvtE -> sh) (cvtF -> f)        -> Delayed sh f (f `compose` fromIndex sh)
@@ -139,6 +144,7 @@ delayed fuseAcc (embedOpenAcc fuseAcc -> Embed BaseEnv cc) =
     cvtF :: OpenFun env aenv f -> DelayedOpenFun env aenv f
     cvtF (Lam f)  = Lam (cvtF f)
     cvtF (Body b) = Body (cvtE b)
+-- delayed fuseAcc a = $internalError "delayed" "pattern of root delayed not caught"
 
 -- Convert array programs as manifest terms.
 --
@@ -243,33 +249,33 @@ manifest fuseAcc (OpenAcc pacc) =
 convertOpenExp :: Bool -> OpenExp env aenv t -> DelayedOpenExp env aenv t
 convertOpenExp fuseAcc exp =
   case exp of
-    Let bnd body            -> Let (cvtE bnd) (cvtE body)
-    Var ix                  -> Var ix
-    Const c                 -> Const c
-    Undef                   -> Undef
-    Tuple tup               -> Tuple (cvtT tup)
-    Prj ix t                -> Prj ix (cvtE t)
-    IndexNil                -> IndexNil
-    IndexCons sh sz         -> IndexCons (cvtE sh) (cvtE sz)
-    IndexHead sh            -> IndexHead (cvtE sh)
-    IndexTail sh            -> IndexTail (cvtE sh)
-    IndexAny                -> IndexAny
-    IndexSlice x ix sh      -> IndexSlice x (cvtE ix) (cvtE sh)
-    IndexFull x ix sl       -> IndexFull x (cvtE ix) (cvtE sl)
-    ToIndex sh ix           -> ToIndex (cvtE sh) (cvtE ix)
-    FromIndex sh ix         -> FromIndex (cvtE sh) (cvtE ix)
-    Cond p t e              -> Cond (cvtE p) (cvtE t) (cvtE e)
-    While p f x             -> While (cvtF p) (cvtF f) (cvtE x)
-    PrimConst c             -> PrimConst c
-    PrimApp f x             -> PrimApp f (cvtE x)
-    Index a sh              -> Index (manifest fuseAcc a) (cvtE sh)
-    LinearIndex a i         -> LinearIndex (manifest fuseAcc a) (cvtE i)
-    Shape a                 -> Shape (manifest fuseAcc a)
-    ShapeSize sh            -> ShapeSize (cvtE sh)
-    Intersect s t           -> Intersect (cvtE s) (cvtE t)
-    Union s t               -> Union (cvtE s) (cvtE t)
-    Foreign ff f e          -> Foreign ff (cvtF f) (cvtE e)
-    Coerce e                -> Coerce (cvtE e)
+    Let bnd body       -> Let (cvtE bnd) (cvtE body)
+    Var ix             -> Var ix
+    Const c            -> Const c
+    Undef              -> Undef
+    Tuple tup          -> Tuple (cvtT tup)
+    Prj ix t           -> Prj ix (cvtE t)
+    IndexNil           -> IndexNil
+    IndexCons sh sz    -> IndexCons (cvtE sh) (cvtE sz)
+    IndexHead sh       -> IndexHead (cvtE sh)
+    IndexTail sh       -> IndexTail (cvtE sh)
+    IndexAny           -> IndexAny
+    IndexSlice x ix sh -> IndexSlice x (cvtE ix) (cvtE sh)
+    IndexFull x ix sl  -> IndexFull x (cvtE ix) (cvtE sl)
+    ToIndex sh ix      -> ToIndex (cvtE sh) (cvtE ix)
+    FromIndex sh ix    -> FromIndex (cvtE sh) (cvtE ix)
+    Cond p t e         -> Cond (cvtE p) (cvtE t) (cvtE e)
+    While p f x        -> While (cvtF p) (cvtF f) (cvtE x)
+    PrimConst c        -> PrimConst c
+    PrimApp f x        -> PrimApp f (cvtE x)
+    Index a sh         -> Index (manifest fuseAcc a) (cvtE sh)
+    LinearIndex a i    -> LinearIndex (manifest fuseAcc a) (cvtE i)
+    Shape a            -> Shape (manifest fuseAcc a)
+    ShapeSize sh       -> ShapeSize (cvtE sh)
+    Intersect s t      -> Intersect (cvtE s) (cvtE t)
+    Union s t          -> Union (cvtE s) (cvtE t)
+    Foreign ff f e     -> Foreign ff (cvtF f) (cvtE e)
+    Coerce e           -> Coerce (cvtE e)
   where
     cvtT :: Tuple (OpenExp env aenv) t -> Tuple (DelayedOpenExp env aenv) t
     cvtT NilTup        = NilTup
@@ -443,6 +449,7 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
     Scanr f z a         -> embed  (into2  Scanr         (cvtF f) (cvtE z)) a
     Scanr1 f a          -> embed  (into   Scanr1        (cvtF f)) a
     Scanr' f z a        -> embed  (into2  Scanr'        (cvtF f) (cvtE z)) a
+    -- Permute f d p a     -> embed2 (into2  permute       (cvtF f) (cvtF p)) d a
     Permute f d p a     -> trav2' (into2  permute       (cvtF f) (cvtF p)) d a
     Stencil f x a       -> embed  (into2  stencil1      (cvtF f) (cvtB x)) a
     Stencil2 f x a y b  -> embed2 (into3  stencil2      (cvtF f) (cvtB x) (cvtB y)) a b
@@ -572,7 +579,9 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
           ->       acc aenv (Array sh  e)
           -> Embed acc aenv cs
     trav2' op defaults source
-      = Embed (BaseEnv `PushEnv` (inject (op BaseEnv defaults source))) (Done ZeroIdx)
+      | defaults' <- inject $ compute $ embedAcc defaults
+      , source'   <- inject $ compute $ embedAcc source
+      = Embed (BaseEnv `PushEnv` (inject (op BaseEnv defaults' source'))) (Done ZeroIdx)
 
     -- force :: Arrays as => Embed acc aenv' as -> Embed acc aenv' as
     -- force (Embed env cc)
@@ -1232,8 +1241,8 @@ aletD' embedAcc elimAcc (Embed env1 cc1) (Embed env0 cc0)
   | acc0'               <- sink1 env1 acc0
   = Stats.ruleFired "aletD/eliminate"
   $ case cc1 of
-      Step{}    -> eliminate env1 cc1 acc0'
-      Yield{}   -> eliminate env1 cc1 acc0'
+      Step{}  -> eliminate env1 cc1 acc0'
+      Yield{} -> eliminate env1 cc1 acc0'
 
   where
     acc0 :: acc (aenv, arrs) brrs
@@ -1561,4 +1570,3 @@ indexArray v = Lam (Body (Index (avarIn v) (Var ZeroIdx)))
 
 linearIndex :: (Kit acc, Shape sh, Elt e) => Idx aenv (Array sh e) -> PreFun acc aenv (Int -> e)
 linearIndex v = Lam (Body (LinearIndex (avarIn v) (Var ZeroIdx)))
-

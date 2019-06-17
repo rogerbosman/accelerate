@@ -433,19 +433,19 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
     -- node, so that the producer can be directly embedded into the consumer
     -- during the code generation phase.
     --
-    Fold f z a          -> embed  (into2 Fold          (cvtF f) (cvtE z)) a
-    Fold1 f a           -> embed  (into  Fold1         (cvtF f)) a
-    FoldSeg f z a s     -> embed2 (into2 FoldSeg       (cvtF f) (cvtE z)) a s
-    Fold1Seg f a s      -> embed2 (into  Fold1Seg      (cvtF f)) a s
-    Scanl f z a         -> embed  (into2 Scanl         (cvtF f) (cvtE z)) a
-    Scanl1 f a          -> embed  (into  Scanl1        (cvtF f)) a
-    Scanl' f z a        -> embed  (into2 Scanl'        (cvtF f) (cvtE z)) a
-    Scanr f z a         -> embed  (into2 Scanr         (cvtF f) (cvtE z)) a
-    Scanr1 f a          -> embed  (into  Scanr1        (cvtF f)) a
-    Scanr' f z a        -> embed  (into2 Scanr'        (cvtF f) (cvtE z)) a
-    Permute f d p a     -> embed2 (into2 permute       (cvtF f) (cvtF p)) d a
-    Stencil f x a       -> embed  (into2 stencil1      (cvtF f) (cvtB x)) a
-    Stencil2 f x a y b  -> embed2 (into3 stencil2      (cvtF f) (cvtB x) (cvtB y)) a b
+    Fold f z a          -> embed  (into2  Fold          (cvtF f) (cvtE z)) a
+    Fold1 f a           -> embed  (into   Fold1         (cvtF f)) a
+    FoldSeg f z a s     -> embed2 (into2  FoldSeg       (cvtF f) (cvtE z)) a s
+    Fold1Seg f a s      -> embed2 (into   Fold1Seg      (cvtF f)) a s
+    Scanl f z a         -> embed  (into2  Scanl         (cvtF f) (cvtE z)) a
+    Scanl1 f a          -> embed  (into   Scanl1        (cvtF f)) a
+    Scanl' f z a        -> embed  (into2  Scanl'        (cvtF f) (cvtE z)) a
+    Scanr f z a         -> embed  (into2  Scanr         (cvtF f) (cvtE z)) a
+    Scanr1 f a          -> embed  (into   Scanr1        (cvtF f)) a
+    Scanr' f z a        -> embed  (into2  Scanr'        (cvtF f) (cvtE z)) a
+    Permute f d p a     -> trav2' (into2  permute       (cvtF f) (cvtF p)) d a
+    Stencil f x a       -> embed  (into2  stencil1      (cvtF f) (cvtB x)) a
+    Stencil2 f x a y b  -> embed2 (into3  stencil2      (cvtF f) (cvtB x) (cvtB y)) a b
 
   where
     -- If fusion is not enabled, force terms to the manifest representation
@@ -560,6 +560,19 @@ embedPreAcc fuseAcc embedAcc elimAcc pacc
       , acc1    <- inject . compute' $ sink env0 cc1
       , acc0    <- inject . compute' $ cc0
       = Embed (env `PushEnv` inject (op env acc1 acc0)) (Done ZeroIdx)
+
+
+    trav2' :: forall aenv aenv' cs sh sh' e. (Arrays cs, Shape sh, Shape sh', Elt e)
+          => (forall aenv'. Extend acc aenv aenv'
+                        -> acc aenv' (Array sh' e)
+                        -> acc aenv' (Array sh e)
+                        -> PreOpenAcc acc aenv' cs
+             )
+          ->       acc aenv (Array sh' e)
+          ->       acc aenv (Array sh  e)
+          -> Embed acc aenv cs
+    trav2' op defaults source
+      = Embed (BaseEnv `PushEnv` (inject (op BaseEnv defaults source))) (Done ZeroIdx)
 
     -- force :: Arrays as => Embed acc aenv' as -> Embed acc aenv' as
     -- force (Embed env cc)
